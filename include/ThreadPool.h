@@ -31,6 +31,7 @@
 
 #define VERBOSE 0
 #define EXCEPTION_SUPPORT 1
+#define SPIN_WAIT 
 
 #if VERBOSE
 #define VERBOSE_COUT std::cout
@@ -42,10 +43,81 @@
       std::cout
 #endif
 
+enum class lock_style {
+  standard_mutex,
+  spin_atomic
+};
+
+template <lock_style lockStyle = lock_style::standard_mutex>
+struct wait_style {
+  static const lock_style style = lockStyle;
+
+  int tasksEnqueued_;
+  std::mutex& pendingTasksMutex_;
+  std::condition_variable waitingCondition_;
+
+  wait_style(std::mutex& pendingTasksMutex)
+    : pendingTasksMutex_{pendingTasksMutex} { }
+
+  void decrease_tasks() {
+    {
+      std::unique_lock<std::mutex> pendingTasksLock(
+          pendingTasksMutex_);
+      tasksEnqueued_--;
+    }
+    waitingCondition_.notify_one();
+  };
+
+  void increase_tasks() {
+    tasksEnqueued_++;
+    waitingCondition_.notify_one();
+  }
+
+  void wait_for_all() {
+    std::unique_lock<std::mutex> pendingTasksLock(pendingTasksMutex_);
+    waitingCondition_.wait(pendingTasksLock,
+        [this] { return !tasksEnqueued_; });
+  }
+
+  size_t pending_tasks() const {
+    return tasksEnqueued_;
+  }
+};
+
+template <>
+struct wait_style<lock_style::spin_atomic> {
+  static const lock_style style = lock_style::spin_atomic;
+
+  std::atomic<int> tasksEnqueued_;
+
+  template<typename T>
+  wait_style(T& notUsed)
+    : tasksEnqueued_{0} { };
+
+  void decrease_tasks() {
+    tasksEnqueued_--;
+  }
+
+  void increase_tasks() {
+    tasksEnqueued_++;
+  }
+
+  size_t pending_tasks() const {
+    return tasksEnqueued_;
+  }
+
+  size_t wait_for_all() {
+    while (tasksEnqueued_) {
+      std::this_thread::yield();
+    }
+  }
+};
+
 /** ThreadPool.
  * A static thread pool implementation using C++11 threads.
  *
  */
+template<lock_style lockStyleT = lock_style::spin_atomic>
 class ThreadPool
 {
    public:
@@ -54,11 +126,11 @@ class ThreadPool
    ThreadPool(size_t numThreads)
        : nT_{numThreads}
        , running_{false}
-       , tasksEnqueued_{0}
        , pendingTasksMutex_{}
        , pendingTaskCondition_{}
        , workers_{}
        , pendingTasks_{}
+       , waiter{pendingTasksMutex_}
    {
       workers_.reserve(std::thread::hardware_concurrency());
       if (numThreads == 0) {
@@ -135,17 +207,7 @@ class ThreadPool
                if (func) {
                   func();
                }
-
-#ifdef SPIN_WAIT
-               tasksEnqueued_--;
-#else
-               {
-                  std::unique_lock<std::mutex> pendingTasksLock(
-                      pendingTasksMutex_);
-                  tasksEnqueued_--;
-               }
-               waitingCondition_.notify_one();
-#endif        // SPIN_WAIT
+               waiter.decrease_tasks();
             } // while running
          };   // runner
          workers_.emplace_back(runner);
@@ -168,12 +230,9 @@ class ThreadPool
          {
             std::unique_lock<std::mutex> pendingTasksLock(pendingTasksMutex_);
             pendingTasks_.emplace(f);
-            tasksEnqueued_++;
+            waiter.increase_tasks();
          }
          pendingTaskCondition_.notify_one();
-#ifndef SPIN_WAIT
-         waitingCondition_.notify_one();
-#endif
       }
       catch (...)
       {
@@ -224,7 +283,7 @@ class ThreadPool
     * Returns the number of pending tasks to execute on the
     * thread pool.
     */
-   inline size_t pending_tasks() { return tasksEnqueued_; }
+   inline size_t pending_tasks() const { return waiter.tasksEnqueued_; }
 
    /**
     * Waits for all pending tasks before returning.
@@ -234,17 +293,7 @@ class ThreadPool
       if (!is_running()) return;
       {
          VERBOSE_COUT << " Waiting for tasks to finish " << std::endl;
-#ifdef SPIN_WAIT
-         while (tasksEnqueued_) {
-            std::this_thread::yield();
-         }
-#else
-         {
-            std::unique_lock<std::mutex> pendingTasksLock(pendingTasksMutex_);
-            waitingCondition_.wait(pendingTasksLock,
-                                   [this] { return !tasksEnqueued_; });
-         }
-#endif
+         waiter.wait_for_all();
          VERBOSE_COUT << " After waiting for tasks to complete " << std::endl;
       }
    }
@@ -252,14 +301,11 @@ class ThreadPool
    private:
    size_t nT_;
    std::atomic<bool> running_;
-#ifdef SPIN_WAIT
-   std::atomic<int> tasksEnqueued_;
-#else
-   int tasksEnqueued_;
-#endif // SPIN_WAIT
+
+   wait_style<lockStyleT> waiter;
+
    std::mutex pendingTasksMutex_;
    std::condition_variable pendingTaskCondition_;
-   std::condition_variable waitingCondition_;
    std::queue<std::function<void()>> pendingTasks_;
    std::vector<std::thread> workers_;
 };

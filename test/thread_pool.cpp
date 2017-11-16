@@ -1,26 +1,34 @@
 #include "ThreadPool.h"
 #include "gtest/gtest.h"
 
-TEST(ThreadPooltest, Constructor) {
+template <typename T>
+class ThreadPooltest : public ::testing::Test {
+};
+
+typedef ::testing::Types</* wait_style<lock_style::standard_mutex>,*/
+                         wait_style<lock_style::spin_atomic>> MyTypes;
+TYPED_TEST_CASE(ThreadPooltest, MyTypes);
+
+TYPED_TEST(ThreadPooltest, Constructor) {
   const size_t NUM_THREADS = 3lu;
-  ThreadPool tp{NUM_THREADS};
+  ThreadPool<TypeParam::style> tp{NUM_THREADS};
 
   ASSERT_EQ(tp.get_num_threads(), NUM_THREADS);
   ASSERT_FALSE(tp.is_running());
 
-  ASSERT_EQ(tp.pending_tasks(), 0);
+  ASSERT_EQ(tp.pending_tasks(), 0); 
 }
 
-TEST(ThreadPooltest, ConstructorInvalid) {
+TYPED_TEST(ThreadPooltest, ConstructorInvalid) {
   const size_t NUM_THREADS = 0lu;
   ASSERT_THROW(
-        ThreadPool tp{NUM_THREADS},
+        ThreadPool<TypeParam::style> tp{NUM_THREADS},
         std::logic_error);
 }
 
-TEST(ThreadPooltest, StartStop) {
+TYPED_TEST(ThreadPooltest, StartStop) {
   const size_t NUM_THREADS = std::thread::hardware_concurrency();
-  ThreadPool tp{NUM_THREADS};
+  ThreadPool<TypeParam::style> tp{NUM_THREADS};
 
   ASSERT_EQ(tp.get_num_threads(), NUM_THREADS);
 
@@ -43,12 +51,12 @@ TEST(ThreadPooltest, StartStop) {
 
 }
 
-TEST(ThreadPooltest, RunSingleTask) {
+TYPED_TEST(ThreadPooltest, RunSingleTask) {
   auto testSingleTask = [&](size_t NUM_THREADS) {
     std::string scopedTraceName = "Single Task with " + std::to_string(NUM_THREADS);
 
     SCOPED_TRACE(scopedTraceName);
-    ThreadPool tp{NUM_THREADS};
+    ThreadPool<TypeParam::style> tp{NUM_THREADS};
 
     ASSERT_EQ(tp.get_num_threads(), NUM_THREADS);
     ASSERT_FALSE(tp.is_running());
@@ -82,10 +90,10 @@ TEST(ThreadPooltest, RunSingleTask) {
   }
 }
 
-TEST(ThreadPooltest, RunMultipleTasks) {
+TYPED_TEST(ThreadPooltest, RunMultipleTasks) {
   const size_t NUM_THREADS = std::thread::hardware_concurrency();
   const size_t NUM_TASKS = 1256;
-  ThreadPool tp{NUM_THREADS};
+  ThreadPool<TypeParam::style> tp{NUM_THREADS};
   
 
   ASSERT_FALSE(tp.is_running());
@@ -116,10 +124,10 @@ TEST(ThreadPooltest, RunMultipleTasks) {
 
 }
 
-TEST(ThreadPooltest, WaitForAll) {
+TYPED_TEST(ThreadPooltest, WaitForAll) {
   const size_t NUM_THREADS = std::thread::hardware_concurrency();
   const size_t NUM_TASKS = NUM_THREADS + 1;
-  ThreadPool tp{NUM_THREADS};
+  ThreadPool<TypeParam::style> tp{NUM_THREADS};
 
   std::atomic<int> finishedExecutionCount{0};
   std::atomic<int> waitingCount{0};
@@ -166,10 +174,10 @@ TEST(ThreadPooltest, WaitForAll) {
   ASSERT_EQ(finishedExecutionCount, NUM_TASKS);
 }
 
-TEST(ThreadPooltest, RunMultipleRandomDurationTasks) {
+TYPED_TEST(ThreadPooltest, RunMultipleRandomDurationTasks) {
   const size_t NUM_THREADS = std::thread::hardware_concurrency();
   const size_t NUM_TASKS = 156;
-  ThreadPool tp{NUM_THREADS};
+  ThreadPool<TypeParam::style> tp{NUM_THREADS};
   std::random_device rd;
   std::mt19937 mt(rd());
   std::uniform_real_distribution<double> dist(1.0, 80.0);
