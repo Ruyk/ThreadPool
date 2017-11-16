@@ -118,25 +118,23 @@ TEST(ThreadPooltest, RunMultipleTasks) {
 
 TEST(ThreadPooltest, WaitForAll) {
   const size_t NUM_THREADS = std::thread::hardware_concurrency();
-  const size_t NUM_TASKS = 1256;
+  const size_t NUM_TASKS = NUM_THREADS + 1;
   ThreadPool tp{NUM_THREADS};
-  std::atomic<int> count{0};
+
+  std::atomic<int> finishedExecutionCount{0};
   std::atomic<int> waitingCount{0};
   volatile std::atomic<bool> ready{false};
-  std::mutex waitToContinue;
 
+  // This counter task will spin loop waiting for 
+  // ready to be set to true. 
+  // All worker threads will simply get stuck there.
+  // Note that no new threads will be picked so
+  // until ready is true, only NUM_THREADS tasks will be
+  // actively waiting
   auto counterTask = [&]() { 
-    bool quit = false;
     waitingCount++;
-    while (quit) {
-      std::this_thread::yield();
-      waitToContinue.lock();
-      if (ready) {
-        quit = true;
-      }
-      waitToContinue.unlock();
-    }
-    count++;
+    while (!ready) { }
+    finishedExecutionCount++;
   };
   tp.start();
 
@@ -144,15 +142,16 @@ TEST(ThreadPooltest, WaitForAll) {
     tp.submit(counterTask);
   }
 
-  while (waitingCount < static_cast<int>(NUM_TASKS)) { 
+  // Wait until all threads have picked up a task
+  // Note that there is an extra task that will not be
+  // picked by any thread, so it will not be stuck in the waiting loop.
+  while (waitingCount < NUM_THREADS) { 
     std::this_thread::yield();
   };
 
-  ASSERT_EQ(waitingCount, NUM_TASKS);
-  ASSERT_EQ(tp.pending_tasks(), NUM_TASKS);
-  waitToContinue.lock();
+  ASSERT_GE(tp.pending_tasks(), NUM_TASKS - 1);
+
   ready = true;
-  waitToContinue.unlock();
 
   tp.wait_for_all_pending_tasks();
 
@@ -164,8 +163,7 @@ TEST(ThreadPooltest, WaitForAll) {
 
   ASSERT_FALSE(tp.is_running());
 
-  ASSERT_EQ(count, NUM_TASKS);
-
+  ASSERT_EQ(finishedExecutionCount, NUM_TASKS);
 }
 
 TEST(ThreadPooltest, RunMultipleRandomDurationTasks) {

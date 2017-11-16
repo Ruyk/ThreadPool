@@ -54,6 +54,7 @@ class ThreadPool
    ThreadPool(size_t numThreads)
        : nT_{numThreads}
        , running_{false}
+       , tasksEnqueued_{0}
        , pendingTasksMutex_{}
        , pendingTaskCondition_{}
        , workers_{}
@@ -65,10 +66,11 @@ class ThreadPool
       }
    };
 
-   ~ThreadPool() {
-     if (is_running()) {
-       stop();
-     }
+   ~ThreadPool()
+   {
+      if (is_running()) {
+         stop();
+      }
    }
    ThreadPool(const ThreadPool&) = delete;
    ThreadPool(ThreadPool&&) = delete;
@@ -133,7 +135,17 @@ class ThreadPool
                if (func) {
                   func();
                }
+
+#ifdef SPIN_WAIT
+               tasksEnqueued_--;
+#else
+               {
+                  std::unique_lock<std::mutex> pendingTasksLock(
+                      pendingTasksMutex_);
+                  tasksEnqueued_--;
+               }
                waitingCondition_.notify_one();
+#endif        // SPIN_WAIT
             } // while running
          };   // runner
          workers_.emplace_back(runner);
@@ -156,8 +168,12 @@ class ThreadPool
          {
             std::unique_lock<std::mutex> pendingTasksLock(pendingTasksMutex_);
             pendingTasks_.emplace(f);
+            tasksEnqueued_++;
          }
          pendingTaskCondition_.notify_one();
+#ifndef SPIN_WAIT
+         waitingCondition_.notify_one();
+#endif
       }
       catch (...)
       {
@@ -208,10 +224,7 @@ class ThreadPool
     * Returns the number of pending tasks to execute on the
     * thread pool.
     */
-   inline size_t pending_tasks() const
-   {
-      return pendingTasks_.size();
-   }
+   inline size_t pending_tasks() { return tasksEnqueued_; }
 
    /**
     * Waits for all pending tasks before returning.
@@ -221,16 +234,29 @@ class ThreadPool
       if (!is_running()) return;
       {
          VERBOSE_COUT << " Waiting for tasks to finish " << std::endl;
-         std::unique_lock<std::mutex> pendingTasksLock(pendingTasksMutex_);
-         waitingCondition_.wait(
-             pendingTasksLock, [this] { return this->pendingTasks_.empty(); });
+#ifdef SPIN_WAIT
+         while (tasksEnqueued_) {
+            std::this_thread::yield();
+         }
+#else
+         {
+            std::unique_lock<std::mutex> pendingTasksLock(pendingTasksMutex_);
+            waitingCondition_.wait(pendingTasksLock,
+                                   [this] { return !tasksEnqueued_; });
+         }
+#endif
          VERBOSE_COUT << " After waiting for tasks to complete " << std::endl;
       }
    }
 
    private:
-   size_t nT_{};
+   size_t nT_;
    std::atomic<bool> running_;
+#ifdef SPIN_WAIT
+   std::atomic<int> tasksEnqueued_;
+#else
+   int tasksEnqueued_;
+#endif // SPIN_WAIT
    std::mutex pendingTasksMutex_;
    std::condition_variable pendingTaskCondition_;
    std::condition_variable waitingCondition_;
