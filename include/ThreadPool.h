@@ -57,7 +57,8 @@ struct wait_style {
   std::condition_variable waitingCondition_;
 
   wait_style(std::mutex& pendingTasksMutex)
-    : pendingTasksMutex_{pendingTasksMutex} { }
+    : tasksEnqueued_{0},
+      pendingTasksMutex_{pendingTasksMutex} { }
 
   void decrease_tasks() {
     {
@@ -80,6 +81,7 @@ struct wait_style {
   }
 
   size_t pending_tasks() const {
+    std::unique_lock<std::mutex> pendingTasksLock(pendingTasksMutex_);
     return tasksEnqueued_;
   }
 };

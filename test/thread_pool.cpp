@@ -5,7 +5,7 @@ template <typename T>
 class ThreadPooltest : public ::testing::Test {
 };
 
-typedef ::testing::Types</* wait_style<lock_style::standard_mutex>,*/
+typedef ::testing::Types<wait_style<lock_style::standard_mutex>,
                          wait_style<lock_style::spin_atomic>> MyTypes;
 TYPED_TEST_CASE(ThreadPooltest, MyTypes);
 
