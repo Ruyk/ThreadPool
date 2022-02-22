@@ -108,7 +108,7 @@ struct wait_style<lock_style::spin_atomic> {
     return tasksEnqueued_;
   }
 
-  size_t wait_for_all() {
+  void wait_for_all() {
     while (tasksEnqueued_) {
       std::this_thread::yield();
     }
