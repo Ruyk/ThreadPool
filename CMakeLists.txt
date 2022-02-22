@@ -1,8 +1,18 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.6)
 set(PROJECT_NAME_STR ThreadPool)
 project(${PROJECT_NAME_STR} C CXX)
 
 find_package(Threads REQUIRED)
+
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  # Specify the commit you depend on and update it regularly.
+  URL https://github.com/google/googletest/archive/refs/tags/release-1.11.0.zip
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
 
 set(COMMON_INCLUDES ${PROJECT_SOURCE_DIR}/include)
 set(EXTERNAL_PROJECTS_DIR ${PROJECT_SOURCE_DIR}/external)
@@ -26,7 +36,5 @@ endif()
 #-------------------
 # Tests
 #-------------------
-add_subdirectory(${EXTERNAL_PROJECTS_DIR}/gtest)
 enable_testing()
-
 add_subdirectory(test)
