@@ -14,6 +14,16 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Fetch Google Benchmark library
+FetchContent_Declare(
+  gbench
+  # Specify the commit you depend on and update it regularly.
+  URL https://github.com/google/benchmark/archive/refs/tags/v1.6.1.zip
+)
+# For Windows: Prevent overriding the parent project's compiler/linker settings
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(gbench)
+
 set(COMMON_INCLUDES ${PROJECT_SOURCE_DIR}/include)
 set(EXTERNAL_PROJECTS_DIR ${PROJECT_SOURCE_DIR}/external)
 
@@ -32,9 +42,7 @@ else()
   set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-checks=*,-clang-analyzer-alpha.*,-google-runtime-int -header-filter=ThreadPool.h")
 endif()
 
+add_subdirectory(benchmarks)
 
-#-------------------
-# Tests
-#-------------------
 enable_testing()
 add_subdirectory(test)
