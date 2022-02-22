@@ -294,3 +294,7 @@ __pycache__/
 # Eclipse
 *.project
 
+*.vscode
+**/*.vscode
+
+build/*
