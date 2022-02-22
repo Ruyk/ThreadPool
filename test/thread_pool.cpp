@@ -233,10 +233,15 @@ TYPED_TEST(ThreadPooltest, MatrixVectorComputation) {
   std::fill(std::begin(vecX), std::end(vecX), 1);
 
   tp.start();
-  for (int r = 0; r < NUM_ROWS; r++) {
-    tp.submit([&, r]() { 
-      vecY[r] = std::inner_product(matrixA + r*NUM_COLS, matrixA + r*NUM_COLS + NUM_COLS, vecX, 0.0);
-    });
+  for (int r = 0; r < NUM_ROWS; r++)
+  {
+     tp.submit(
+         [&, r]()
+         {
+            vecY[r] = std::inner_product(matrixA + r * NUM_COLS,
+                                         matrixA + r * NUM_COLS + NUM_COLS,
+                                         vecX, 0.0);
+         });
   }
   tp.stop();
 
