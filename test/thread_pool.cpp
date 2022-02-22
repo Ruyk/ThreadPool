@@ -219,7 +219,7 @@ TYPED_TEST(ThreadPooltest, RunMultipleRandomDurationTasks) {
 
 TYPED_TEST(ThreadPooltest, MatrixVectorComputation) {
   const size_t NUM_THREADS = std::thread::hardware_concurrency();
-  ThreadPool<TypeParam::style> tp{NUM_THREADS};
+  ThreadPool<TypeParam::style> tp{NUM_THREADS*4};
   
   const size_t NUM_ROWS = 64;
   const size_t NUM_COLS = 128;
@@ -235,9 +235,7 @@ TYPED_TEST(ThreadPooltest, MatrixVectorComputation) {
   tp.start();
   for (int r = 0; r < NUM_ROWS; r++) {
     tp.submit([&, r]() { 
-      for (int c = 0; c < NUM_COLS; c++) {
-        vecY[r] += matrixA[r * NUM_COLS + c] * vecX[r];
-      }
+      vecY[r] = std::inner_product(matrixA + r*NUM_COLS, matrixA + r*NUM_COLS + NUM_COLS, vecX, 0.0);
     });
   }
   tp.stop();
