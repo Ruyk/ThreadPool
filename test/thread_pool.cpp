@@ -1,6 +1,7 @@
 #include "ThreadPool.h"
 
 #include<random>
+#include <algorithm>
 
 #include "gtest/gtest.h"
 
@@ -213,4 +214,44 @@ TYPED_TEST(ThreadPooltest, RunMultipleRandomDurationTasks) {
 
   ASSERT_EQ(count, NUM_TASKS);
 
+}
+
+
+TYPED_TEST(ThreadPooltest, MatrixVectorComputation) {
+  const size_t NUM_THREADS = std::thread::hardware_concurrency();
+  ThreadPool<TypeParam::style> tp{NUM_THREADS};
+  
+  const size_t NUM_ROWS = 64;
+  const size_t NUM_COLS = 128;
+  const size_t VEC_LENGTH = NUM_COLS;
+  float matrixA[NUM_ROWS*NUM_COLS];
+  float vecX[VEC_LENGTH] = {0};
+  float vecY[VEC_LENGTH] = {0};
+  float vecY_test[VEC_LENGTH] = {0};
+
+  std::iota(std::begin(matrixA), std::end(matrixA), 0);
+  std::fill(std::begin(vecX), std::end(vecX), 1);
+
+  tp.start();
+  for (int r = 0; r < NUM_ROWS; r++) {
+    tp.submit([&, r]() { 
+      for (int c = 0; c < NUM_COLS; c++) {
+        vecY[r] += matrixA[r * NUM_COLS + c] * vecX[r];
+      }
+    });
+  }
+  tp.stop();
+
+  // Test result by adding each row of the matrix
+  auto current = std::begin(matrixA);
+  auto partial_sum = [&]() {
+    auto val = std::accumulate(current, current + NUM_COLS, 0);
+    current += NUM_COLS;
+    return val;
+  };
+  
+  std::generate_n(std::begin(vecY_test), NUM_ROWS, partial_sum);
+  bool valid = std::equal(std::begin(vecY), std::end(vecY), std::begin(vecY_test));
+
+  EXPECT_TRUE(valid);
 }
